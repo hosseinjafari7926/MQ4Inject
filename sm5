@@ -1,0 +1,105 @@
+// Define constants
+#define ACCOUNT_BALANCE_MODE   1    // 1 for equity, 0 for balance
+#define ACCOUNT_BALANCE        AccountBalance(ACCOUNT_BALANCE_MODE)
+#define ACCOUNT_RISK           0.01 // 1% risk per trade
+
+// Define variables
+int ticket;
+double lotSize;
+double AccountBalanceVar;
+double AccountRisk;
+
+// Define indicators
+int SMA20;
+int RSI;
+int BBands;
+int ADX;
+
+// Define inputs
+input int FibLevel = 50;
+input int StopLoss = 10;
+input int TakeProfit = 20;
+
+// Define trade direction
+enum TradeDirection {
+    BUY,
+    SELL,
+    NONE
+};
+
+// Define functions
+TradeDirection GetTradeDirection() {
+    double ma20 = iMA(NULL, PERIOD_M30, 20, 0, MODE_SMA, PRICE_CLOSE, 1);
+    if (ma20 == 0.0) {
+        return NONE;
+    }
+    double price = Ask;
+    if (price > ma20) {
+        return BUY;
+    } else {
+        return SELL;
+    }
+}
+
+double GetLotSize() {
+    double risk = AccountBalanceVar * ACCOUNT_RISK;
+    double stopLossPips = StopLoss * 10;
+    double pipValue = MarketInfo(Symbol(), MODE_TICKVALUE);
+    double lotSizeVar = risk / (stopLossPips * pipValue);
+    return NormalizeDouble(lotSizeVar, 2);
+}
+
+double GetStopLoss(TradeDirection tradeDirection) {
+    double stopLossPrice;
+    if (tradeDirection == BUY) {
+        stopLossPrice = Bid - StopLoss * Point;
+    } else {
+        stopLossPrice = Ask + StopLoss * Point;
+    }
+    return stopLossPrice;
+}
+
+double GetTakeProfit(TradeDirection tradeDirection) {
+    double takeProfitPrice;
+    if (tradeDirection == BUY) {
+        takeProfitPrice = Bid + TakeProfit * Point;
+    } else {
+        takeProfitPrice = Ask - TakeProfit * Point;
+    }
+    return takeProfitPrice;
+}
+
+void OpenTrade(TradeDirection tradeDirection) {
+    lotSize = GetLotSize();
+    double stopLossPrice = GetStopLoss(tradeDirection);
+    double takeProfitPrice = GetTakeProfit(tradeDirection);
+    if (tradeDirection == BUY) {
+        ticket = OrderSend(Symbol(), OP_BUY, lotSize, Ask, 3, stopLossPrice, takeProfitPrice, "");
+    } else {
+        ticket = OrderSend(Symbol(), OP_SELL, lotSize, Bid, 3, stopLossPrice, takeProfitPrice, "");
+    }
+}
+
+void CloseTrade() {
+    bool result = OrderClose(ticket, lotSize, Bid, 3, Red);
+    if (result) {
+        ticket = 0;
+    }
+}
+
+// Define start function
+void OnStart() {
+    // Check if a trade is already open
+    if (OrdersTotal() > 0) {
+        return;
+    }
+
+    // Get trade direction
+    TradeDirection tradeDirection = GetTradeDirection();
+    if (tradeDirection == NONE) {
+        return;
+    }
+
+    // Check if Fibonacci retracement level is reached
+    double price = tradeDirection == BUY ? Ask : Bid;
+    double high = iFractals(NULL, PERIOD_M30, MODE_UPPER, 2);
